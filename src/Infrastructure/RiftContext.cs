@@ -11,7 +11,7 @@ public class RiftContext : DbContext
     public DbSet<Card> Cards { get; set; }
     public DbSet<Deck> Decks { get; set; }
     public DbSet<DeckCard> DeckCards { get; set; }
-
+    public DbSet<TournamentResult> TournamentResults { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeckCard>()

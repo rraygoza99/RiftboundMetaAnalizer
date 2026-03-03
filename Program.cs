@@ -10,7 +10,6 @@ using RiftboundMetaAnalizer.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Register Infrastructure (Database & Caching)
 builder.Services.AddDbContext<RiftContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddStackExchangeRedisCache(options =>
@@ -19,9 +18,9 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.InstanceName = "Riftbound_";
 });
 
-// 2. Register Application Services
 builder.Services.AddScoped<IDeckService, DeckService>();
 builder.Services.AddScoped<IMetaService, MetaService>();
+builder.Services.AddScoped<ITournamentScraper, RiftboundMetaAnalizer.Infrastructure.Scraping.TournamentScraper>();
 builder.Services.AddValidatorsFromAssemblyContaining<DeckValidator>();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -29,7 +28,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Seed the database
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -45,7 +43,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// 3. The Deck Submission Endpoint
 app.MapPost("/api/decks", async (Deck deck, IDeckService deckService) =>
 {
     var result = await deckService.CreateDeckAsync(deck);
@@ -65,5 +62,23 @@ app.MapGet("/api/meta/champion-synergy/{championId}", async (string championId, 
         : Results.NotFound(new { Errors = result.Errors });
 })
 .WithName("GetChampionSynergy");
+
+app.MapPost("/api/tournaments/scrape", async ([FromBody] string url, ITournamentScraper scraper, RiftContext context) =>
+{
+    try
+    {
+        var results = await scraper.ScrapeTournamentAsync(url);
+        
+        context.TournamentResults.AddRange(results);
+        await context.SaveChangesAsync();
+
+        return Results.Ok(results);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Error = ex.Message });
+    }
+})
+.WithName("ScrapeTournament");
 
 app.Run();
