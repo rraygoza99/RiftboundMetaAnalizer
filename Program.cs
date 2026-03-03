@@ -21,8 +21,10 @@ builder.Services.AddStackExchangeRedisCache(options =>
 builder.Services.AddScoped<IDeckService, DeckService>();
 builder.Services.AddScoped<IMetaService, MetaService>();
 builder.Services.AddScoped<ITournamentScraper, RiftboundMetaAnalizer.Infrastructure.Scraping.TournamentScraper>();
+builder.Services.AddScoped<ICardScraper, RiftboundMetaAnalizer.Infrastructure.Scraping.CardScraper>();
 builder.Services.AddValidatorsFromAssemblyContaining<DeckValidator>();
 
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -43,42 +45,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.MapPost("/api/decks", async (Deck deck, IDeckService deckService) =>
-{
-    var result = await deckService.CreateDeckAsync(deck);
-
-    return result.IsSuccess 
-        ? Results.Created($"/api/decks/{result.Value}", result.Value) 
-        : Results.BadRequest(new { Errors = result.Errors });
-})
-.WithName("CreateDeck");
-
-app.MapGet("/api/meta/champion-synergy/{championId}", async (string championId, IMetaService metaService) =>
-{
-    var result = await metaService.GetChampionSynergyAsync(championId);
-
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.NotFound(new { Errors = result.Errors });
-})
-.WithName("GetChampionSynergy");
-
-app.MapPost("/api/tournaments/scrape", async ([FromBody] string url, ITournamentScraper scraper, RiftContext context) =>
-{
-    try
-    {
-        var results = await scraper.ScrapeTournamentAsync(url);
-        
-        context.TournamentResults.AddRange(results);
-        await context.SaveChangesAsync();
-
-        return Results.Ok(results);
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new { Error = ex.Message });
-    }
-})
-.WithName("ScrapeTournament");
+app.MapControllers();
 
 app.Run();

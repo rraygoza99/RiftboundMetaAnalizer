@@ -26,6 +26,20 @@ public class TournamentScraper : ITournamentScraper
         var tournamentNameNode = doc.DocumentNode.SelectSingleNode("//h1[contains(@class, 'page-title')]");
         var tournamentName = tournamentNameNode?.InnerText.Trim() ?? "Unknown Tournament";
 
+        var tournament = await _context.Tournaments.FirstOrDefaultAsync(t => t.Name == tournamentName);
+        if (tournament == null)
+        {
+            tournament = new Tournament
+            {
+                Name = tournamentName,
+                Date = DateTime.UtcNow,
+                Results = new List<TournamentResult>()
+            };
+            // Note: We add it to the context so it's tracked. 
+            // SaveChanges will be called later by the caller (Program.cs)
+            _context.Tournaments.Add(tournament);
+        }
+
         // Finding deck list items based on DOM rows
         var deckNodes = doc.DocumentNode.SelectNodes("//tr[starts-with(@id, 'desktop-deck-')]");
 
@@ -35,7 +49,6 @@ public class TournamentScraper : ITournamentScraper
             {
                 var rankNode = node.SelectSingleNode(".//td[1]//strong");
                 var deckLinkNode = node.SelectSingleNode(".//td[3]//a");
-                // data-href contains the full URL often
                 var deckUrl = node.GetAttributeValue("data-href", "");
 
                 if (rankNode != null && !string.IsNullOrWhiteSpace(deckUrl))
@@ -74,10 +87,9 @@ public class TournamentScraper : ITournamentScraper
                     results.Add(new TournamentResult
                     {
                         Id = Guid.NewGuid(),
-                        TournamentName = tournamentName,
+                        Tournament = tournament,
                         Standing = standing > 0 ? standing : 99, // Default if parsing fails
-                        Deck = deck,
-                        Date = DateTime.UtcNow // Or parse from page
+                        Deck = deck
                     });
                 }
             }
@@ -132,7 +144,7 @@ public class TournamentScraper : ITournamentScraper
                 
                 var cardName = nameNode.InnerText.Trim();
                 
-                // Extract ID from image source (e.g., ogn-185-298_full.png -> ogn-185)
+                // Extract ID from image source (ogn-185-298_full.png -> ogn-185)
                 var imageSrc = row.GetAttributeValue("data-image-src", "");
                 var cardId = string.Empty;
 
@@ -189,7 +201,6 @@ public class TournamentScraper : ITournamentScraper
                 if (existingCard != null)
                 {
                     card = existingCard;
-                    // Update details if needed?
                     if (existingCard.Domain == "Unknown" && domainString != "Unknown") existingCard.Domain = domainString;
                 }
                 else
