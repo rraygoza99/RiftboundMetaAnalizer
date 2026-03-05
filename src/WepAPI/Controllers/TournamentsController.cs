@@ -1,8 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using RiftboundMetaAnalizer.Application;
-using RiftboundMetaAnalizer.Domain;
-using RiftboundMetaAnalizer.Infrastructure;
 
 namespace RiftboundMetaAnalizer.WebAPI.Controllers
 {
@@ -11,12 +8,10 @@ namespace RiftboundMetaAnalizer.WebAPI.Controllers
     public class TournamentsController : ControllerBase
     {
         private readonly ITournamentScraper _scraper;
-        private readonly RiftContext _context;
 
-        public TournamentsController(ITournamentScraper scraper, RiftContext context)
+        public TournamentsController(ITournamentScraper scraper)
         {
             _scraper = scraper;
-            _context = context;
         }
 
         [HttpPost("scrape")]
@@ -25,11 +20,14 @@ namespace RiftboundMetaAnalizer.WebAPI.Controllers
             try
             {
                 var results = await _scraper.ScrapeTournamentAsync(url);
-                
-                _context.TournamentResults.AddRange(results);
-                await _context.SaveChangesAsync();
 
-                return Ok(results);
+                return Ok(new
+                {
+                    message = $"Scraped {results.Count} results",
+                    count = results.Count,
+                    tournament = results.FirstOrDefault()?.Tournament?.Name,
+                    standings = results.Select(r => new { r.Standing, Deck = r.Deck?.Name }).ToList()
+                });
             }
             catch (Exception ex)
             {

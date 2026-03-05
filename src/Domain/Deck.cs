@@ -4,4 +4,5 @@ public class Deck{
     public required string LegendCardId { get; set; }
     public required Card Legend { get; set; }
     public List<DeckCard> DeckCards { get; set; } = new();
+    public List<TournamentResult> TournamentResults { get; set; } = new();
 }

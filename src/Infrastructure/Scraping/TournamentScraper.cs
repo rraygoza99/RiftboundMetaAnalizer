@@ -35,64 +35,79 @@ public class TournamentScraper : ITournamentScraper
                 Date = DateTime.UtcNow,
                 Results = new List<TournamentResult>()
             };
-            // Note: We add it to the context so it's tracked. 
-            // SaveChanges will be called later by the caller (Program.cs)
             _context.Tournaments.Add(tournament);
         }
+
+        // Ensure placeholder cards exist
+        await EnsurePlaceholderCardAsync("UNKNOWN", "Unknown", "Unknown");
+        await EnsurePlaceholderCardAsync("TEMP-LEGEND", "Unknown Legend", "Unknown");
+
+        // Flush tournament + placeholders so the connection isn't held during scraping
+        await _context.SaveChangesAsync();
 
         // Finding deck list items based on DOM rows
         var deckNodes = doc.DocumentNode.SelectNodes("//tr[starts-with(@id, 'desktop-deck-')]");
 
-        if (deckNodes != null)
+        if (deckNodes == null || deckNodes.Count == 0)
         {
-            foreach (var node in deckNodes)
+            throw new InvalidOperationException(
+                $"No deck rows found on the page. The site may be rate-limiting or the page structure changed. Tournament: '{tournamentName}'");
+        }
+
+        foreach (var node in deckNodes)
+        {
+            var rankNode = node.SelectSingleNode(".//td[1]//strong");
+            var deckLinkNode = node.SelectSingleNode(".//td[3]//a");
+            var deckUrl = node.GetAttributeValue("data-href", "");
+
+            if (rankNode == null || string.IsNullOrWhiteSpace(deckUrl))
+                continue;
+
+            var rankText = rankNode.InnerText.Trim();
+            var numericRank = new string(rankText.Where(char.IsDigit).ToArray());
+            int.TryParse(numericRank, out int standing);
+
+            var deckName = deckLinkNode?.InnerText.Trim() ?? "Unknown Deck";
+            
+            if (!deckUrl.StartsWith("http"))
             {
-                var rankNode = node.SelectSingleNode(".//td[1]//strong");
-                var deckLinkNode = node.SelectSingleNode(".//td[3]//a");
-                var deckUrl = node.GetAttributeValue("data-href", "");
-
-                if (rankNode != null && !string.IsNullOrWhiteSpace(deckUrl))
-                {
-                    var rankText = rankNode.InnerText.Trim();
-                    var numericRank = new string(rankText.Where(char.IsDigit).ToArray());
-                    int.TryParse(numericRank, out int standing);
-
-                    var deckName = deckLinkNode?.InnerText.Trim() ?? "Unknown Deck";
-                    
-                    if (!deckUrl.StartsWith("http"))
-                    {
-                        var uri = new Uri(url);
-                        deckUrl = $"{uri.Scheme}://{uri.Host}{deckUrl}";
-                    }
-
-                    // Scrape the individual deck page details
-                    var deck = await ScrapeDeckDetailsAsync(deckUrl);
-                    if (deck is null)
-                    {
-                        // Fallback if detail scraping fails
-                         deck = new Deck 
-                        { 
-                            Id = Guid.NewGuid(),
-                            Name = deckName,
-                            // Minimal properties
-                            Legend = new Card { Id = "unknown", Name = "Unknown", Domain = "Unknown", ChampionTag = "Unknown" },
-                            LegendCardId = "unknown"
-                        };
-                    }
-                    else
-                    {
-                        deck.Name = string.IsNullOrWhiteSpace(deck.Name) ? deckName : deck.Name;
-                    }
-
-                    results.Add(new TournamentResult
-                    {
-                        Id = Guid.NewGuid(),
-                        Tournament = tournament,
-                        Standing = standing > 0 ? standing : 99, // Default if parsing fails
-                        Deck = deck
-                    });
-                }
+                var uri = new Uri(url);
+                deckUrl = $"{uri.Scheme}://{uri.Host}{deckUrl}";
             }
+
+            // Scrape the individual deck page details
+            var deck = await ScrapeDeckDetailsAsync(deckUrl);
+            if (deck is null)
+            {
+                // Fallback if detail scraping fails
+                deck = new Deck 
+                { 
+                    Id = Guid.NewGuid(),
+                    Name = deckName,
+                    Legend = await GetOrTrackCardAsync("UNKNOWN", "Unknown", "Unknown"),
+                    LegendCardId = "UNKNOWN"
+                };
+            }
+            else
+            {
+                deck.Name = string.IsNullOrWhiteSpace(deck.Name) ? deckName : deck.Name;
+            }
+
+            var result = new TournamentResult
+            {
+                Id = Guid.NewGuid(),
+                Tournament = tournament,
+                Standing = standing > 0 ? standing : 99,
+                Deck = deck
+            };
+
+            _context.TournamentResults.Add(result);
+
+            // Save each result individually — keeps transactions short and
+            // prevents a poisoned connection pool if one save fails.
+            await _context.SaveChangesAsync();
+
+            results.Add(result);
         }
 
         return results;
@@ -121,8 +136,8 @@ public class TournamentScraper : ITournamentScraper
                 Id = Guid.NewGuid(),
                 DeckCards = new List<DeckCard>(),
                 Name = deckName,
-                Legend = new Card { Id = "temp-legend", Name = "Unknown Legend", Domain = "Unknown", ChampionTag = "Unknown" },
-                LegendCardId = "temp-legend"
+                Legend = await GetOrTrackCardAsync("TEMP-LEGEND", "Unknown Legend", "Unknown"),
+                LegendCardId = "TEMP-LEGEND"
             };
 
             var cardRows = doc.DocumentNode.SelectNodes("//tr[contains(@class, 'card-list-item')]");
@@ -177,6 +192,9 @@ public class TournamentScraper : ITournamentScraper
                     var cardHref = nameNode.GetAttributeValue("href", "");
                     cardId = cardHref.Split('/').Last().Replace("details-", "");
                 }
+
+                // Normalize to uppercase to match API card IDs
+                cardId = cardId.ToUpperInvariant();
                 
                 var domainNodes = row.SelectNodes(".//td[5]//img[@alt]");
                 var domains = new List<string>();
@@ -220,7 +238,7 @@ public class TournamentScraper : ITournamentScraper
                 if (cardTypeAttr == "legend")
                 {
                     deck.Legend = card;
-                    deck.LegendCardId = card.Id;
+                    deck.LegendCardId = card.Id.ToUpper();
                 }
 
                 var existingDeckCard = deck.DeckCards.FirstOrDefault(dc => dc.CardId == card.Id);
@@ -240,13 +258,13 @@ public class TournamentScraper : ITournamentScraper
                 }
             }
 
-            if (deck.LegendCardId == "temp-legend" && deck.DeckCards.Any())
+            if (deck.LegendCardId == "TEMP-LEGEND" && deck.DeckCards.Any())
             {
                 var potentiaLegend = deck.DeckCards.FirstOrDefault(dc => dc.Card.CardType == CardType.Legend);
                 if (potentiaLegend != null)
                 {
                      deck.Legend = potentiaLegend.Card;
-                     deck.LegendCardId = potentiaLegend.CardId;
+                     deck.LegendCardId = potentiaLegend.CardId.ToUpper();
                 }
             }
             
@@ -257,5 +275,26 @@ public class TournamentScraper : ITournamentScraper
             Console.WriteLine($"Error scraping deck {deckUrl}: {ex.Message}");
             return null;
         }
+    }
+
+    private async Task EnsurePlaceholderCardAsync(string id, string name, string domain)
+    {
+        var exists = _context.Cards.Local.Any(c => c.Id == id)
+                     || await _context.Cards.AnyAsync(c => c.Id == id);
+        if (!exists)
+        {
+            _context.Cards.Add(new Card { Id = id, Name = name, Domain = domain, ChampionTag = null });
+        }
+    }
+
+    private async Task<Card> GetOrTrackCardAsync(string id, string name, string domain)
+    {
+        var card = _context.Cards.Local.FirstOrDefault(c => c.Id == id)
+                   ?? await _context.Cards.FirstOrDefaultAsync(c => c.Id == id);
+        if (card != null) return card;
+
+        card = new Card { Id = id, Name = name, Domain = domain, ChampionTag = null };
+        _context.Cards.Add(card);
+        return card;
     }
 }

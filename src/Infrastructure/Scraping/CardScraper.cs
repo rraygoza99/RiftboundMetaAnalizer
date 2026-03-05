@@ -59,8 +59,8 @@ public class CardScraper : ICardScraper
                 if (idIndex == -1 || nameIndex == -1) continue;
                 if (row.GetArrayLength() <= Math.Max(idIndex, nameIndex)) continue;
 
-                // 1. ID
-                string id = row[idIndex].GetString() ?? "";
+                // 1. ID (normalized to uppercase)
+                string id = (row[idIndex].GetString() ?? "").ToUpperInvariant();
                 if (string.IsNullOrEmpty(id)) continue;
 
                 // 2. Name
@@ -88,11 +88,14 @@ public class CardScraper : ICardScraper
                     }
                 }
 
-                // 5. CardType
+                // 5. CardType & Category
                 CardType cardType = CardType.Main;
+                string category = "Unit"; // Default
                 if (typeIndex != -1 && row.GetArrayLength() > typeIndex)
                 {
                     string typeStr = row[typeIndex].GetString() ?? "";
+                    category = typeStr;
+
                     if (string.Equals(typeStr, "Rune", StringComparison.OrdinalIgnoreCase)) cardType = CardType.Rune;
                     else if (string.Equals(typeStr, "Legend", StringComparison.OrdinalIgnoreCase)) cardType = CardType.Legend;
                 }
@@ -124,6 +127,14 @@ public class CardScraper : ICardScraper
                     }
                 }
 
+                // 8. LegendGroup — groups all variants of the same legend
+                string? legendGroup = null;
+                if (cardType == CardType.Legend)
+                {
+                    var nameParts = name.Split(new[] { " - " }, StringSplitOptions.RemoveEmptyEntries);
+                    legendGroup = nameParts.Length > 0 ? nameParts[0].Trim() : name;
+                }
+
                 cards.Add(new Card
                 {
                     Id = id,
@@ -131,8 +142,10 @@ public class CardScraper : ICardScraper
                     Domain = domain,
                     EnergyCost = energyCost,
                     CardType = cardType,
+                    Category = category,
                     Keywords = keywords,
-                    ChampionTag = championTag
+                    ChampionTag = championTag,
+                    LegendGroup = legendGroup
                 });
             }
 

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace RiftboundMetaAnalizer.Migrations
 {
     [DbContext(typeof(RiftContext))]
-    partial class RiftContextModelSnapshot : ModelSnapshot
+    [Migration("20260303205458_AddCardCategory")]
+    partial class AddCardCategory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -47,9 +50,6 @@ namespace RiftboundMetaAnalizer.Migrations
                     b.Property<List<string>>("Keywords")
                         .IsRequired()
                         .HasColumnType("text[]");
-
-                    b.Property<string>("LegendGroup")
-                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
