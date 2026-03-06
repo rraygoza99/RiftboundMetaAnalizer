@@ -5,6 +5,38 @@
   color: #e0e0e0;
 }
 
+.meta-body {
+  display: flex;
+  gap: 24px;
+}
+
+.meta-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-preview {
+  flex-shrink: 0;
+  width: 260px;
+  position: sticky;
+  top: 24px;
+  align-self: flex-start;
+  text-align: center;
+}
+
+.card-preview__image {
+  width: 100%;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(108, 99, 255, 0.3);
+}
+
+.card-preview__name {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  color: #c8c3ff;
+  font-weight: 600;
+}
+
 .meta-snapshot--loading,
 .meta-snapshot--empty {
   display: flex;
@@ -59,6 +91,20 @@
   border-radius: 20px;
   border: 1px solid #6c63ff;
   white-space: nowrap;
+}
+
+.meta-placement--best {
+  margin-left: auto;
+  color: #a8ffb0;
+  background: #0f3d2e;
+  border-color: #4caf50;
+}
+
+.meta-placement--worst {
+  margin-left: 0;
+  color: #ffb0b0;
+  background: #3d0f0f;
+  border-color: #e57373;
 }
 
 .synergy-section {
@@ -134,10 +180,16 @@
   border-radius: 6px;
   background: #16213e;
   transition: background 0.15s;
+  cursor: pointer;
 }
 
 .card-row:hover {
   background: #1e2d50;
+}
+
+.card-row--selected {
+  background: #1e2d50;
+  outline: 1px solid #6c63ff;
 }
 
 .card-row__name {

@@ -1,4 +1,5 @@
 public class CardInsightDto {
+    public string CardId { get; set; }
     public string CardName { get; set; }
     public string Category { get; set; }
     public double AppearanceRate { get; set; }

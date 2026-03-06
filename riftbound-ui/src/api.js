@@ -13,5 +13,6 @@ export async function fetchChampionSynergy(championId) {
 }
 
 export function getLegendPortraitUrl(cardId) {
-  return `https://riftmana.com/wp-content/uploads/Legends/${cardId}.webp`;
+  const baseId = cardId.replace(/-?A$/, '');
+  return `https://riftmana.com/wp-content/uploads/Legends/${baseId}.webp`;
 }

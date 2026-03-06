@@ -97,10 +97,26 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
         }
 
         // Calculate average tournament placement for this legend
-        var averagePlacement = await context.TournamentResults
+        var standings = await context.TournamentResults
             .Where(tr => deckIds.Contains(tr.DeckId))
-            .Select(tr => (double?)tr.Standing)
-            .AverageAsync();
+            .Select(tr => tr.Standing)
+            .OrderBy(s => s)
+            .ToListAsync();
+
+        int? bestPlacement = standings.Count > 0 ? standings.First() : null;
+        int? worstPlacement = standings.Count > 0 ? standings.Last() : null;
+
+        // Trimmed average: remove best and worst, average the rest
+        double? averagePlacement = null;
+        if (standings.Count > 2)
+        {
+            var trimmed = standings.Skip(1).Take(standings.Count - 2).ToList();
+            averagePlacement = Math.Round(trimmed.Average(), 2);
+        }
+        else if (standings.Count > 0)
+        {
+            averagePlacement = Math.Round(standings.Average(), 2);
+        }
 
         var cardStats = await context.DeckCards
             .Where(dc => deckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId))
@@ -117,6 +133,7 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
 
         var insights = cardStats.Select(stat => new CardInsightDto
         {
+            CardId = stat.CardId,
             CardName = stat.CardName,
             Category = stat.Category,
             AppearanceRate = (double)stat.InclusionCount / totalDecksForLegend,
@@ -131,7 +148,9 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
         {
             LegendName = legendCard.Name,
             SampleSize = totalDecksForLegend,
-            AveragePlacement = averagePlacement.HasValue ? Math.Round(averagePlacement.Value, 2) : null,
+            AveragePlacement = averagePlacement,
+            BestPlacement = bestPlacement,
+            WorstPlacement = worstPlacement,
             CoreCards = insights
                 .Where(c => c.AppearanceRate >= 0.6)
                 .OrderByDescending(c => c.AppearanceRate)
