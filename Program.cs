@@ -23,16 +23,20 @@ builder.Services.AddDbContext<RiftContext>(options =>
            .EnableDetailedErrors()
            .EnableSensitiveDataLogging());
 
-builder.Services.AddStackExchangeRedisCache(options =>
+var redisConfig = builder.Configuration.GetConnectionString("Redis")
+                  ?? builder.Configuration["Redis:ConnectionString"];
+if (!string.IsNullOrEmpty(redisConfig))
 {
-    var redisConfig = builder.Configuration.GetConnectionString("Redis");
-    if (string.IsNullOrEmpty(redisConfig))
+    builder.Services.AddStackExchangeRedisCache(options =>
     {
-        redisConfig = builder.Configuration["Redis:ConnectionString"];
-    }
-    options.Configuration = redisConfig;
-    options.InstanceName = "Riftbound_";
-});
+        options.Configuration = redisConfig;
+        options.InstanceName = "Riftbound_";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
 
 builder.Services.AddScoped<IDeckService, DeckService>();
 builder.Services.AddScoped<IMetaService, MetaService>();
@@ -52,7 +56,13 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowUI", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        var origins = new List<string> { "http://localhost:5173" };
+        var extra = builder.Configuration["AllowedOrigins"];
+        if (!string.IsNullOrEmpty(extra))
+        {
+            origins.AddRange(extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        policy.WithOrigins(origins.ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod();
     });

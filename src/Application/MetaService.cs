@@ -165,7 +165,7 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
 
         // 3. Card Pair Synergy - top co-occurring card pairs
         var deckCardSets = await context.DeckCards
-            .Where(dc => deckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId))
+            .Where(dc => deckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId) && dc.Card.CardType == CardType.Main)
             .GroupBy(dc => dc.DeckId)
             .Select(g => g.Select(dc => new { dc.CardId, dc.Card.Name }).ToList())
             .ToListAsync();

@@ -9,9 +9,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__Default=Host=db;Port=5432;Database=riftbound_db;Username=postgres;Password=rift_pass_123
-      - Redis__ConnectionString=cache:6379
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__Default=Host=${DB_HOST};Port=5432;Database=riftbound_db;Username=postgres;Password=${DB_PASSWORD};SSL Mode=Require;Trust Server Certificate=true
     depends_on:
       db:
         condition: service_healthy

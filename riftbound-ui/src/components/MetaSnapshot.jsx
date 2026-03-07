@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import './MetaSnapshot.css'
 
 function getCardImageUrl(cardId) {
@@ -46,6 +46,8 @@ const SECTION_KEYS = ['Stats', 'Charts', 'CardPairSynergies', 'PerformanceTrend'
 export default function MetaSnapshot({ data, loading, trendData, matchupData }) {
   const [selectedCard, setSelectedCard] = useState(null)
   const [sections, toggleSection] = useSectionState(SECTION_KEYS)
+
+  useEffect(() => { setSelectedCard(null) }, [data])
 
   if (loading) {
     return (
@@ -138,6 +140,14 @@ export default function MetaSnapshot({ data, loading, trendData, matchupData }) 
       </div>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Card Breakdown" open={sections.CardBreakdown} onToggle={() => toggleSection('CardBreakdown')}>
+      <div className="category-groups">
+        {sortedCategories.map(([category, cards]) => (
+          <CategoryGroup key={category} category={category} cards={cards} selectedCard={selectedCard} onSelectCard={setSelectedCard} />
+        ))}
+      </div>
+      </CollapsibleSection>
+
       <CollapsibleSection title="Charts" open={sections.Charts} onToggle={() => toggleSection('Charts')}>
       <div className="charts-row">
         {metaSnapshot.energyCurve && Object.keys(metaSnapshot.energyCurve).length > 0 && (
@@ -179,13 +189,6 @@ export default function MetaSnapshot({ data, loading, trendData, matchupData }) 
         </CollapsibleSection>
       )}
 
-      <CollapsibleSection title="Card Breakdown" open={sections.CardBreakdown} onToggle={() => toggleSection('CardBreakdown')}>
-      <div className="category-groups">
-        {sortedCategories.map(([category, cards]) => (
-          <CategoryGroup key={category} category={category} cards={cards} selectedCard={selectedCard} onSelectCard={setSelectedCard} />
-        ))}
-      </div>
-      </CollapsibleSection>
         </div>
 
         {selectedCard && (

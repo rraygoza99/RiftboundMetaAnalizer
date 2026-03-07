@@ -1,3 +1,12 @@
 obj/*
 bin/*
 riftbound-ui/node_modules/*
+.env
+*.env
+appsettings.Production.json
+apprunner-config.json
+trust-policy.json
+source-config.json
+riftbound-ui/dist/
+riftbound-ui/dist.zip
+*.sql
