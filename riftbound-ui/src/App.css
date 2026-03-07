@@ -34,6 +34,36 @@
   padding: 0 8px;
 }
 
+.date-range-bar {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.date-range-btn {
+  padding: 6px 16px;
+  border: 1px solid rgba(108, 99, 255, 0.4);
+  border-radius: 20px;
+  background: transparent;
+  color: #ccc;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.date-range-btn:hover {
+  border-color: #6c63ff;
+  color: #fff;
+}
+
+.date-range-btn.active {
+  background: linear-gradient(135deg, #6c63ff, #b063ff);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
 .main-content {
   flex: 1;
 }

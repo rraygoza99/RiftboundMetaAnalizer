@@ -1,0 +1,55 @@
+.tier-list {
+  padding: 24px;
+  background: #16213e;
+  border-radius: 12px;
+  color: #e0e0e0;
+  margin-top: 24px;
+}
+
+.tier-list__title {
+  margin: 0 0 16px 0;
+  font-size: 1.3rem;
+  color: #fff;
+}
+
+.tier-list__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tier-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+
+.tier-row__label {
+  font-size: 1.4rem;
+  font-weight: 800;
+  min-width: 28px;
+  text-align: center;
+}
+
+.tier-row__legends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tier-legend {
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  font-size: 0.85rem;
+  color: #ccc;
+  cursor: default;
+}
+
+.tier-legend:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}

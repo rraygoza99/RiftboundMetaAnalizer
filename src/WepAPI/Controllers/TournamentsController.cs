@@ -34,5 +34,42 @@ namespace RiftboundMetaAnalizer.WebAPI.Controllers
                 return BadRequest(new { Error = ex.Message });
             }
         }
+
+        [HttpPost("scrape-all")]
+        public async Task<IActionResult> ScrapeAllNewTournaments([FromBody] string listUrl)
+        {
+            try
+            {
+                var result = await _scraper.ScrapeNewTournamentsAsync(listUrl);
+
+                return Ok(new
+                {
+                    message = $"Imported {result.Imported}, skipped {result.Skipped}, failed {result.Failed}",
+                    imported = result.Imported,
+                    skipped = result.Skipped,
+                    failed = result.Failed,
+                    importedNames = result.ImportedNames,
+                    failedNames = result.FailedNames
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
+
+        [HttpPost("backfill-dates")]
+        public async Task<IActionResult> BackfillDates()
+        {
+            try
+            {
+                var updated = await _scraper.BackfillTournamentDatesAsync();
+                return Ok(new { message = $"Updated {updated} tournament dates" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Error = ex.Message });
+            }
+        }
     }
 }
