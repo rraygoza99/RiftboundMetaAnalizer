@@ -36,11 +36,11 @@ namespace RiftboundMetaAnalizer.WebAPI.Controllers
         }
 
         [HttpPost("scrape-all")]
-        public async Task<IActionResult> ScrapeAllNewTournaments([FromBody] string listUrl)
+        public async Task<IActionResult> ScrapeAllNewTournaments([FromBody] string listUrl, [FromQuery] int? days = null)
         {
             try
             {
-                var result = await _scraper.ScrapeNewTournamentsAsync(listUrl);
+                var result = await _scraper.ScrapeNewTournamentsAsync(listUrl, days);
 
                 return Ok(new
                 {
@@ -59,11 +59,11 @@ namespace RiftboundMetaAnalizer.WebAPI.Controllers
         }
 
         [HttpPost("backfill-dates")]
-        public async Task<IActionResult> BackfillDates()
+        public async Task<IActionResult> BackfillDates([FromQuery] int? days = null)
         {
             try
             {
-                var updated = await _scraper.BackfillTournamentDatesAsync();
+                var updated = await _scraper.BackfillTournamentDatesAsync(days);
                 return Ok(new { message = $"Updated {updated} tournament dates" });
             }
             catch (Exception ex)

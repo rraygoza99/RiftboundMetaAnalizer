@@ -118,11 +118,15 @@ public class TournamentScraper : ITournamentScraper
         return results;
     }
 
-    public async Task<BulkImportResult> ScrapeNewTournamentsAsync(string listUrl)
+    public async Task<BulkImportResult> ScrapeNewTournamentsAsync(string listUrl, int? days = null)
     {
         var result = new BulkImportResult();
         var web = new HtmlWeb();
         web.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+
+        var cutoffDate = days.HasValue
+            ? DateTime.UtcNow.AddDays(-days.Value)
+            : (DateTime?)null;
 
         var existingNames = await _context.Tournaments.Select(t => t.Name).ToListAsync();
         var existingSet = new HashSet<string>(existingNames, StringComparer.OrdinalIgnoreCase);
@@ -170,6 +174,13 @@ public class TournamentScraper : ITournamentScraper
                 DateTime? rowDate = null;
                 if (dateNode != null && DateTime.TryParse(dateNode.InnerText.Trim(), out var parsed))
                     rowDate = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+
+                // Skip tournaments older than the cutoff date
+                if (cutoffDate.HasValue && rowDate.HasValue && rowDate.Value < cutoffDate.Value)
+                {
+                    result.Skipped++;
+                    continue;
+                }
 
                 if (existingSet.Contains(name))
                 {
@@ -421,7 +432,7 @@ public class TournamentScraper : ITournamentScraper
         return null;
     }
 
-    public async Task<int> BackfillTournamentDatesAsync()
+    public async Task<int> BackfillTournamentDatesAsync(int? days = null)
     {
         var web = new HtmlWeb();
         web.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
@@ -431,8 +442,13 @@ public class TournamentScraper : ITournamentScraper
         var existingQuery = QueryHelpers.ParseQuery(baseUri.Query);
         var basePathAndQuery = $"{baseUri.Scheme}://{baseUri.Host}{baseUri.AbsolutePath}";
 
+        var cutoffDate = days.HasValue
+            ? DateTime.UtcNow.AddDays(-days.Value)
+            : (DateTime?)null;
+
         // Build a name -> date map from all list pages
         var dateMap = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        var reachedCutoff = false;
 
         for (int page = 1; ; page++)
         {
@@ -457,8 +473,18 @@ public class TournamentScraper : ITournamentScraper
                 var name = nameNode?.InnerText.Trim() ?? "";
                 if (string.IsNullOrEmpty(name) || dateNode == null) continue;
                 if (DateTime.TryParse(dateNode.InnerText.Trim(), out var d))
-                    dateMap.TryAdd(name, DateTime.SpecifyKind(d, DateTimeKind.Utc));
+                {
+                    var utcDate = DateTime.SpecifyKind(d, DateTimeKind.Utc);
+                    if (cutoffDate.HasValue && utcDate < cutoffDate.Value)
+                    {
+                        reachedCutoff = true;
+                        continue;
+                    }
+                    dateMap.TryAdd(name, utcDate);
+                }
             }
+
+            if (reachedCutoff) break;
 
             var nextLink = doc.DocumentNode.SelectSingleNode("//li[contains(@class, 'page-item')]//a[@rel='next']");
             if (nextLink == null) break;

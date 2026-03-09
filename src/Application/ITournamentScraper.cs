@@ -5,8 +5,8 @@ namespace RiftboundMetaAnalizer.Application;
 public interface ITournamentScraper
 {
     Task<List<TournamentResult>> ScrapeTournamentAsync(string url, DateTime? date = null);
-    Task<BulkImportResult> ScrapeNewTournamentsAsync(string listUrl);
-    Task<int> BackfillTournamentDatesAsync();
+    Task<BulkImportResult> ScrapeNewTournamentsAsync(string listUrl, int? days = null);
+    Task<int> BackfillTournamentDatesAsync(int? days = null);
 }
 
 public class BulkImportResult
