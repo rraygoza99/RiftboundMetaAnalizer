@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import LegendSlider from './components/LegendSlider'
 import MetaSnapshot from './components/MetaSnapshot'
 import TierList from './components/TierList'
-import { fetchLegends, fetchChampionSynergy, fetchTrend, fetchMatchups, fetchTierList } from './api'
+import { fetchLegends, fetchChampionSynergy, fetchTrend, fetchMatchups, fetchTierList, fetchArchetypes } from './api'
 import './App.css'
 
 export default function App() {
@@ -11,6 +11,7 @@ export default function App() {
   const [synergyData, setSynergyData] = useState(null)
   const [trendData, setTrendData] = useState(null)
   const [matchupData, setMatchupData] = useState(null)
+  const [archetypes, setArchetypes] = useState([])
   const [tierListData, setTierListData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -29,14 +30,16 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const [synergy, trend, matchups] = await Promise.all([
+      const [synergy, trend, matchups, archs] = await Promise.all([
         fetchChampionSynergy(legendId, range),
         fetchTrend(legendId, range).catch(() => null),
         fetchMatchups(legendId, range).catch(() => null),
+        fetchArchetypes(legendId, range).catch(() => []),
       ])
       setSynergyData(synergy)
       setTrendData(trend)
       setMatchupData(matchups)
+      setArchetypes(archs || [])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -50,6 +53,7 @@ export default function App() {
     setSynergyData(null)
     setTrendData(null)
     setMatchupData(null)
+    setArchetypes([])
     await loadLegendData(legend.id, dateRange)
   }
 
@@ -90,7 +94,7 @@ export default function App() {
       </div>
 
       <main className="main-content">
-        <MetaSnapshot data={synergyData} loading={loading} trendData={trendData} matchupData={matchupData} />
+        <MetaSnapshot data={synergyData} loading={loading} trendData={trendData} matchupData={matchupData} archetypes={archetypes} selectedLegend={selectedLegend} dateRange={dateRange} />
         {tierListData && tierListData.length > 0 && <TierList data={tierListData} />}
       </main>
     </div>

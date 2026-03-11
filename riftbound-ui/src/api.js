@@ -34,6 +34,20 @@ export async function fetchTierList(range) {
   return res.json();
 }
 
+export async function fetchArchetypes(championId, range) {
+  const res = await fetch(`${API_BASE}/meta/archetypes/${encodeURIComponent(championId)}${rangeQuery(range)}`);
+  if (!res.ok) throw new Error('Failed to fetch archetypes');
+  return res.json();
+}
+
+export async function fetchGeneratedDeck(championId, archetype, range) {
+  const q = rangeQuery(range);
+  const sep = q ? '&' : '?';
+  const res = await fetch(`${API_BASE}/meta/generate-deck/${encodeURIComponent(championId)}${q}${sep}archetype=${encodeURIComponent(archetype)}`);
+  if (!res.ok) throw new Error('Failed to generate deck');
+  return res.json();
+}
+
 export function getLegendPortraitUrl(cardId) {
   const baseId = cardId.replace(/-?A$/, '');
   return `https://riftmana.com/wp-content/uploads/Legends/${baseId}.webp`;

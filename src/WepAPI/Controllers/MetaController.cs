@@ -60,5 +60,21 @@ namespace RiftboundMetaAnalizer.WebAPI.Controllers
             var result = await _metaService.GetTierListAsync(from);
             return result.IsSuccess ? Ok(result.Value) : NotFound(new { Errors = result.Errors });
         }
+
+        [HttpGet("archetypes/{championId}")]
+        public async Task<IActionResult> GetArchetypes(string championId, [FromQuery] string? range = null)
+        {
+            var from = ParseRange(range);
+            var result = await _metaService.GetArchetypesAsync(championId, from);
+            return result.IsSuccess ? Ok(result.Value) : NotFound(new { Errors = result.Errors });
+        }
+
+        [HttpGet("generate-deck/{championId}")]
+        public async Task<IActionResult> GenerateDeck(string championId, [FromQuery] string archetype, [FromQuery] string? range = null)
+        {
+            var from = ParseRange(range);
+            var result = await _metaService.GenerateDeckAsync(championId, archetype, from);
+            return result.IsSuccess ? Ok(result.Value) : NotFound(new { Errors = result.Errors });
+        }
     }
 }

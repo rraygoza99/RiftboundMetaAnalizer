@@ -80,9 +80,12 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
         // Collect all variant IDs for this legend group
         var legendIds = await GetLegendGroupIdsAsync(legendCard);
 
-        var deckIds = await GetDeckIdsInRangeAsync(legendIds, from);
+        // All decks for this legend (unfiltered) – used for play rate, top cut, standings
+        var allDeckIds = await GetAllDeckIdsInRangeAsync(legendIds, from);
+        var totalDecksForLegend = allDeckIds.Count;
 
-        var totalDecksForLegend = deckIds.Count;
+        // Top 25% of decks by performance – used for card analysis (core, tech, synergy, energy, domain)
+        var deckIds = await GetDeckIdsInRangeAsync(legendIds, from);
 
         // Total decks across all legends for play rate (also filtered by date range)
         var totalDecksOverall = from.HasValue
@@ -107,9 +110,9 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
             });
         }
 
-        // Calculate average tournament placement for this legend
+        // Calculate average tournament placement for this legend (using ALL decks)
         var standings = await context.TournamentResults
-            .Where(tr => deckIds.Contains(tr.DeckId))
+            .Where(tr => allDeckIds.Contains(tr.DeckId))
             .Select(tr => tr.Standing)
             .OrderBy(s => s)
             .ToListAsync();
@@ -140,11 +143,13 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
             ? Math.Round((double)topCutCount / standings.Count * 100, 2)
             : 0;
 
-        // 4. Energy Curve - average energy cost distribution across this legend's decks
+        var filteredDeckCount = deckIds.Count;
+
+        // 4. Energy Curve - average energy cost distribution across top-performing decks
         var energyCurve = await context.DeckCards
             .Where(dc => deckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId) && dc.Card.EnergyCost != null)
             .GroupBy(dc => dc.Card.EnergyCost!.Value)
-            .Select(g => new { EnergyCost = g.Key, AvgCount = g.Sum(dc => dc.Quantity) / (double)totalDecksForLegend })
+            .Select(g => new { EnergyCost = g.Key, AvgCount = g.Sum(dc => dc.Quantity) / (double)filteredDeckCount })
             .OrderBy(x => x.EnergyCost)
             .ToListAsync();
 
@@ -196,7 +201,7 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
                 Card1Name = cardNames.GetValueOrDefault(p.Key.Item1, ""),
                 Card2Id = p.Key.Item2,
                 Card2Name = cardNames.GetValueOrDefault(p.Key.Item2, ""),
-                CoOccurrenceRate = Math.Round((double)p.Value / totalDecksForLegend, 2)
+                CoOccurrenceRate = Math.Round((double)p.Value / filteredDeckCount, 2)
             })
             .ToList();
 
@@ -218,7 +223,7 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
             CardId = stat.CardId,
             CardName = stat.CardName,
             Category = stat.Category,
-            AppearanceRate = (double)stat.InclusionCount / totalDecksForLegend,
+            AppearanceRate = (double)stat.InclusionCount / filteredDeckCount,
             AvgQuantity = stat.AverageQuantity,
             SynergyScore = 0
         }).ToList();
@@ -467,6 +472,206 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
     }
 
     /// <summary>
+    /// Classifies decks into archetypes based on energy curve characteristics.
+    /// </summary>
+    public async Task<Result<List<string>>> GetArchetypesAsync(string championId, DateTime? from = null)
+    {
+        var legendCard = await context.Cards
+            .FirstOrDefaultAsync(c => c.Id == championId && c.CardType == CardType.Legend);
+        if (legendCard == null)
+            return Result<List<string>>.Failure(new List<string> { "Legend not found" });
+
+        var legendIds = await GetLegendGroupIdsAsync(legendCard);
+        var deckIds = await GetDeckIdsInRangeAsync(legendIds, from);
+
+        if (deckIds.Count == 0)
+            return Result<List<string>>.Success(new List<string>());
+
+        var archetypes = new HashSet<string>();
+
+        // Analyze each deck's energy curve to classify archetype
+        var deckProfiles = await context.DeckCards
+            .Where(dc => deckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId) && dc.Card.CardType == CardType.Main)
+            .GroupBy(dc => dc.DeckId)
+            .Select(g => new
+            {
+                DeckId = g.Key,
+                AvgCost = g.Where(dc => dc.Card.EnergyCost != null).Average(dc => (double)dc.Card.EnergyCost!.Value),
+                SpellCount = g.Count(dc => dc.Card.Category == "Spell"),
+                UnitCount = g.Count(dc => dc.Card.Category == "Unit"),
+                GearCount = g.Count(dc => dc.Card.Category == "Gear"),
+                TotalCards = g.Count()
+            })
+            .ToListAsync();
+
+        foreach (var deck in deckProfiles)
+        {
+            var archetype = ClassifyArchetype(deck.AvgCost, deck.SpellCount, deck.UnitCount, deck.GearCount, deck.TotalCards);
+            archetypes.Add(archetype);
+        }
+
+        return Result<List<string>>.Success(archetypes.OrderBy(a => a).ToList());
+    }
+
+    /// <summary>
+    /// Generates an optimal deck for a legend + archetype based on top-performing deck card stats.
+    /// </summary>
+    public async Task<Result<GeneratedDeckDto>> GenerateDeckAsync(string championId, string archetype, DateTime? from = null)
+    {
+        var legendCard = await context.Cards
+            .FirstOrDefaultAsync(c => c.Id == championId && c.CardType == CardType.Legend);
+        if (legendCard == null)
+            return Result<GeneratedDeckDto>.Failure(new List<string> { "Legend not found" });
+
+        var legendIds = await GetLegendGroupIdsAsync(legendCard);
+        var allTopDeckIds = await GetDeckIdsInRangeAsync(legendIds, from);
+
+        if (allTopDeckIds.Count == 0)
+            return Result<GeneratedDeckDto>.Failure(new List<string> { "No deck data available" });
+
+        // Filter to decks matching the requested archetype
+        var deckProfiles = await context.DeckCards
+            .Where(dc => allTopDeckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId) && dc.Card.CardType == CardType.Main)
+            .GroupBy(dc => dc.DeckId)
+            .Select(g => new
+            {
+                DeckId = g.Key,
+                AvgCost = g.Where(dc => dc.Card.EnergyCost != null).Average(dc => (double)dc.Card.EnergyCost!.Value),
+                SpellCount = g.Count(dc => dc.Card.Category == "Spell"),
+                UnitCount = g.Count(dc => dc.Card.Category == "Unit"),
+                GearCount = g.Count(dc => dc.Card.Category == "Gear"),
+                TotalCards = g.Count()
+            })
+            .ToListAsync();
+
+        var archetypeDeckIds = deckProfiles
+            .Where(d => ClassifyArchetype(d.AvgCost, d.SpellCount, d.UnitCount, d.GearCount, d.TotalCards) == archetype)
+            .Select(d => d.DeckId)
+            .ToList();
+
+        // Fall back to all top decks if no decks match the archetype
+        if (archetypeDeckIds.Count == 0)
+            archetypeDeckIds = allTopDeckIds;
+
+        var deckCount = archetypeDeckIds.Count;
+
+        // Get Main deck card stats (CardType.Main)
+        var mainCardStats = await context.DeckCards
+            .Where(dc => archetypeDeckIds.Contains(dc.DeckId) && !legendIds.Contains(dc.CardId) && dc.Card.CardType == CardType.Main)
+            .GroupBy(dc => new { dc.CardId, dc.Card.Name, dc.Card.Category })
+            .Select(g => new
+            {
+                CardId = g.Key.CardId,
+                CardName = g.Key.Name,
+                Category = g.Key.Category,
+                AvgQuantity = g.Average(x => (double)x.Quantity),
+                AppearanceRate = (double)g.Count() / deckCount
+            })
+            .OrderByDescending(c => c.AppearanceRate)
+            .ThenByDescending(c => c.AvgQuantity)
+            .ToListAsync();
+
+        // Get Rune (side deck) card stats
+        var runeCardStats = await context.DeckCards
+            .Where(dc => archetypeDeckIds.Contains(dc.DeckId) && dc.Card.CardType == CardType.Rune)
+            .GroupBy(dc => new { dc.CardId, dc.Card.Name, dc.Card.Category })
+            .Select(g => new
+            {
+                CardId = g.Key.CardId,
+                CardName = g.Key.Name,
+                Category = g.Key.Category,
+                AvgQuantity = g.Average(x => (double)x.Quantity),
+                AppearanceRate = (double)g.Count() / deckCount
+            })
+            .OrderByDescending(c => c.AppearanceRate)
+            .ThenByDescending(c => c.AvgQuantity)
+            .ToListAsync();
+
+        // Build Main Deck: pick cards with >= 15% appearance, round quantity, cap at ~40 cards
+        var mainDeck = new List<DeckEntryDto>();
+        var battlefields = new List<DeckEntryDto>();
+        int mainTotal = 0;
+
+        foreach (var card in mainCardStats.Where(c => c.AppearanceRate >= 0.15))
+        {
+            var qty = (int)Math.Round(card.AvgQuantity);
+            if (qty < 1) qty = 1;
+
+            if (card.Category == "Battlefield")
+            {
+                battlefields.Add(new DeckEntryDto
+                {
+                    CardId = card.CardId,
+                    CardName = card.CardName,
+                    Category = card.Category,
+                    Quantity = qty,
+                    AppearanceRate = Math.Round(card.AppearanceRate, 2)
+                });
+            }
+            else
+            {
+                if (mainTotal + qty > 40) break;
+                mainDeck.Add(new DeckEntryDto
+                {
+                    CardId = card.CardId,
+                    CardName = card.CardName,
+                    Category = card.Category,
+                    Quantity = qty,
+                    AppearanceRate = Math.Round(card.AppearanceRate, 2)
+                });
+                mainTotal += qty;
+            }
+        }
+
+        // Build Side Deck (Runes): pick top runes, cap at ~10
+        var sideDeck = new List<DeckEntryDto>();
+        int sideTotal = 0;
+        foreach (var card in runeCardStats.Where(c => c.AppearanceRate >= 0.15))
+        {
+            var qty = (int)Math.Round(card.AvgQuantity);
+            if (qty < 1) qty = 1;
+            if (sideTotal + qty > 10) break;
+            sideDeck.Add(new DeckEntryDto
+            {
+                CardId = card.CardId,
+                CardName = card.CardName,
+                Category = card.Category,
+                Quantity = qty,
+                AppearanceRate = Math.Round(card.AppearanceRate, 2)
+            });
+            sideTotal += qty;
+        }
+
+        return Result<GeneratedDeckDto>.Success(new GeneratedDeckDto
+        {
+            LegendId = championId,
+            LegendName = legendCard.Name,
+            Archetype = archetype,
+            MainDeck = mainDeck,
+            Battlefields = battlefields,
+            SideDeck = sideDeck
+        });
+    }
+
+    private static string ClassifyArchetype(double avgCost, int spellCount, int unitCount, int gearCount, int totalCards)
+    {
+        var spellRatio = totalCards > 0 ? (double)spellCount / totalCards : 0;
+        var unitRatio = totalCards > 0 ? (double)unitCount / totalCards : 0;
+
+        if (avgCost <= 2.5 && unitRatio >= 0.5)
+            return "Aggro";
+        if (avgCost >= 4.5)
+            return "Control";
+        if (spellRatio >= 0.5)
+            return "Miracle";
+        if (avgCost >= 3.5 && unitRatio >= 0.4)
+            return "Midrange";
+        if (gearCount >= 4)
+            return "Gear-Heavy";
+        return "Midrange";
+    }
+
+    /// <summary>
     /// Returns all card IDs that share the same LegendGroup as the given legend card.
     /// Falls back to just the single card ID if LegendGroup is not set.
     /// </summary>
@@ -484,6 +689,32 @@ public class MetaService(RiftContext context, IDistributedCache cache) : IMetaSe
     }
 
     private async Task<List<Guid>> GetDeckIdsInRangeAsync(List<string> legendIds, DateTime? from)
+    {
+        IQueryable<TournamentResult> query = context.TournamentResults
+            .Where(tr => legendIds.Contains(tr.Deck.LegendCardId));
+
+        if (from.HasValue)
+        {
+            query = query.Where(tr => tr.Tournament.Date >= from.Value);
+        }
+
+        // Rank decks by best (lowest) tournament standing and keep only the top 25%
+        var rankedDecks = await query
+            .GroupBy(tr => tr.DeckId)
+            .Select(g => new
+            {
+                DeckId = g.Key,
+                BestStanding = g.Min(tr => tr.Standing)
+            })
+            .OrderBy(d => d.BestStanding)
+            .ToListAsync();
+
+        var topCount = Math.Max(1, (int)Math.Ceiling(rankedDecks.Count * 0.25));
+
+        return rankedDecks.Take(topCount).Select(d => d.DeckId).ToList();
+    }
+
+    private async Task<List<Guid>> GetAllDeckIdsInRangeAsync(List<string> legendIds, DateTime? from)
     {
         if (from.HasValue)
         {

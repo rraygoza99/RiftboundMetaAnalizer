@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { fetchGeneratedDeck } from '../api'
 import './MetaSnapshot.css'
 
 function getCardImageUrl(cardId) {
@@ -41,13 +42,20 @@ function useSectionState(keys) {
   return [ref.current, toggle]
 }
 
-const SECTION_KEYS = ['Stats', 'Charts', 'CardPairSynergies', 'PerformanceTrend', 'MatchupTable', 'TopSynergisticRunes', 'CardBreakdown']
+const SECTION_KEYS = ['Stats', 'Charts', 'CardPairSynergies', 'PerformanceTrend', 'MatchupTable', 'TopSynergisticRunes', 'CardBreakdown', 'GeneratedDeck']
 
-export default function MetaSnapshot({ data, loading, trendData, matchupData }) {
+export default function MetaSnapshot({ data, loading, trendData, matchupData, archetypes = [], selectedLegend, dateRange }) {
   const [selectedCard, setSelectedCard] = useState(null)
   const [sections, toggleSection] = useSectionState(SECTION_KEYS)
+  const [selectedArchetype, setSelectedArchetype] = useState('')
+  const [generatedDeck, setGeneratedDeck] = useState(null)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => { setSelectedCard(null) }, [data])
+  useEffect(() => {
+    setSelectedArchetype(archetypes.length > 0 ? archetypes[0] : '')
+    setGeneratedDeck(null)
+  }, [archetypes])
 
   if (loading) {
     return (
@@ -74,6 +82,19 @@ export default function MetaSnapshot({ data, loading, trendData, matchupData }) 
         <p>No tournament data available for this legend yet.</p>
       </div>
     )
+  }
+
+  const handleGenerate = async () => {
+    if (!selectedLegend || !selectedArchetype) return
+    setGenerating(true)
+    try {
+      const deck = await fetchGeneratedDeck(selectedLegend.id, selectedArchetype, dateRange)
+      setGeneratedDeck(deck)
+    } catch {
+      setGeneratedDeck(null)
+    } finally {
+      setGenerating(false)
+    }
   }
 
   // Merge core + tech into one list, sorted by appearance rate
@@ -118,6 +139,28 @@ export default function MetaSnapshot({ data, loading, trendData, matchupData }) 
           </Tooltip>
         )}
       </div>
+
+      {archetypes.length > 0 && (
+        <div className="deck-generator-bar">
+          <label className="deck-generator-bar__label">Archetype</label>
+          <select
+            className="deck-generator-bar__select"
+            value={selectedArchetype}
+            onChange={(e) => setSelectedArchetype(e.target.value)}
+          >
+            {archetypes.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <button
+            className="deck-generator-bar__btn"
+            onClick={handleGenerate}
+            disabled={generating || !selectedArchetype}
+          >
+            {generating ? 'Generating...' : 'Generate Deck'}
+          </button>
+        </div>
+      )}
 
       <CollapsibleSection title="Stats" open={sections.Stats} onToggle={() => toggleSection('Stats')}>
       <div className="stats-row">
@@ -186,6 +229,12 @@ export default function MetaSnapshot({ data, loading, trendData, matchupData }) 
               ))}
             </div>
           </div>
+        </CollapsibleSection>
+      )}
+
+      {generatedDeck && (
+        <CollapsibleSection title={`Generated Deck — ${generatedDeck.archetype}`} open={sections.GeneratedDeck} onToggle={() => toggleSection('GeneratedDeck')}>
+          <GeneratedDeckView deck={generatedDeck} onSelectCard={setSelectedCard} selectedCard={selectedCard} />
         </CollapsibleSection>
       )}
 
@@ -384,6 +433,40 @@ function MatchupTable({ data }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function GeneratedDeckView({ deck, onSelectCard, selectedCard }) {
+  const renderSection = (title, cards) => {
+    if (!cards || cards.length === 0) return null
+    const total = cards.reduce((sum, c) => sum + c.quantity, 0)
+    return (
+      <div className="gen-deck-section">
+        <h4 className="gen-deck-section__title">{title} ({total})</h4>
+        <div className="gen-deck-list">
+          {cards.map((card) => (
+            <div
+              key={card.cardId}
+              className={`gen-deck-row ${selectedCard?.cardId === card.cardId ? 'gen-deck-row--selected' : ''}`}
+              onClick={() => onSelectCard(card)}
+            >
+              <span className="gen-deck-row__qty">{card.quantity}x</span>
+              <span className="gen-deck-row__name">{card.cardName}</span>
+              <span className="gen-deck-row__cat">{card.category}</span>
+              <span className="gen-deck-row__rate">{Math.round(card.appearanceRate * 100)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="gen-deck">
+      {renderSection('Main Deck', deck.mainDeck)}
+      {renderSection('Battlefields', deck.battlefields)}
+      {renderSection('Side Deck (Runes)', deck.sideDeck)}
     </div>
   )
 }
